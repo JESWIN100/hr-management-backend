@@ -2,6 +2,7 @@ const db = require('../config/db');
 const path = require('path');
 const fs = require('fs');
 
+
 // GET /api/employees
 const getAllEmployees = async (req, res) => {
   console.log("📥 INCOMING FRONTEND QUERY:", req.query);
@@ -65,8 +66,8 @@ const getEmployeeById = async (req, res) => {
       `SELECT e.*, d.department_name
        FROM employees e
        LEFT JOIN departments d ON e.department_id = d.id
-       WHERE e.id = ?`,
-      [req.params.id]
+       WHERE e.user_id = ?`,
+      [req.user.id]
     );
 
     if (rows.length === 0) {
@@ -82,12 +83,16 @@ const getEmployeeById = async (req, res) => {
 
 // POST /api/employees
 const createEmployee = async (req, res) => {
+console.log(req.body);
+  const person_id=req.user.id
   try {
     const {
       name, email, phone, department_id,
-      designation, joining_date, employment_status, address,
+      designation, joining_date, employment_status,role, address,status
     } = req.body;
 
+    
+    
     if (!name || !email) {
       return res.status(400).json({ success: false, message: 'Name and email are required' });
     }
@@ -98,21 +103,22 @@ const createEmployee = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Employee with this email already exists' });
     }
 
-    const avatar = req.file ? `/uploads/${req.file.filename}` : null;
+    const avatar = req.file ? `${req.file.filename}` : null;
 
     console.log("avatar",avatar);
     
+    const userid=req.user.id
 
     const [result] = await db.query(
       `INSERT INTO employees
-        (name, email, phone, department_id, designation, joining_date, employment_status, address, avatar)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name,person_id,email, phone, department_id, designation, joining_date, employment_status, address, avatar,role)
+       VALUES (?,?, ?,?, ?, ?, ?, ?, ?, ?,?)`,
       [
-        name, email, phone || null,
+        name,person_id, email, phone || null,
         department_id || null, designation || null,
         joining_date || null,
-        employment_status || 'Active',
-        address || null, avatar,
+        status || 'Active',
+        address || null, avatar,role,
       ]
     );
 
@@ -135,12 +141,13 @@ const createEmployee = async (req, res) => {
 };
 
 // PUT /api/employees/:id
+
 const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const {
       name, email, phone, department_id,
-      designation, joining_date, employment_status, address,
+      designation, joining_date, employment_status, role, address, status
     } = req.body;
 
     const [existing] = await db.query('SELECT * FROM employees WHERE id = ?', [id]);
@@ -158,18 +165,22 @@ const updateEmployee = async (req, res) => {
 
     let avatar = existing[0].avatar;
     if (req.file) {
-      // Delete old avatar if exists
+      // Delete old avatar if it exists
       if (avatar) {
         const oldPath = path.join(__dirname, '../..', avatar);
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        try {
+          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        } catch (fileErr) {
+          console.warn('Could not delete old avatar:', fileErr);
+        }
       }
-      avatar = `/uploads/${req.file.filename}`;
+      avatar = `${req.file.filename}`;
     }
 
     await db.query(
       `UPDATE employees SET
         name = ?, email = ?, phone = ?, department_id = ?,
-        designation = ?, joining_date = ?, employment_status = ?, address = ?, avatar = ?
+        designation = ?, joining_date = ?, employment_status = ?, role = ?, address = ?, avatar = ?
        WHERE id = ?`,
       [
         name || existing[0].name,
@@ -178,10 +189,90 @@ const updateEmployee = async (req, res) => {
         department_id ?? existing[0].department_id,
         designation ?? existing[0].designation,
         joining_date ?? existing[0].joining_date,
-        employment_status || existing[0].employment_status,
+       status ?? existing[0].status, 
+        role ?? existing[0].role,         // ADDED: role
         address ?? existing[0].address,
         avatar,
-        id,
+        id,                               // WHERE id = ?
+      ]
+    );
+
+    const [updated] = await db.query(
+      `SELECT e.*, d.department_name FROM employees e
+       LEFT JOIN departments d ON e.department_id = d.id WHERE e.id = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Employee updated successfully',
+      data: updated[0],
+    });
+  } catch (err) {
+    console.error('Update employee error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+const updateProfileEmployee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name, email, phone, department_id,
+      designation, joining_date, employment_status, role, address, status
+    } = req.body;
+
+    const [existing] = await db.query('SELECT * FROM employees WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    // Check email uniqueness (exclude current)
+    if (email) {
+      const [dup] = await db.query('SELECT id FROM employees WHERE email = ? AND id != ?', [email, id]);
+      if (dup.length > 0) {
+        return res.status(409).json({ success: false, message: 'Email already in use by another employee' });
+      }
+    }
+
+    let avatar = existing[0].avatar;
+    if (req.file) {
+      // Delete old avatar if it exists
+      if (avatar) {
+        const oldPath = path.join(__dirname, '../..', avatar);
+        try {
+          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        } catch (fileErr) {
+          console.warn('Could not delete old avatar:', fileErr);
+        }
+      }
+      avatar = `${req.file.filename}`;
+    }
+
+    // --- SECURITY FIX ---
+    // If their current role in the database is 'employee', force it to remain 'employee'.
+    // Otherwise, allow the role update (useful if an Admin is using this same function).
+    const finalRole = existing[0].role === 'employee' 
+      ? existing[0].role 
+      : (role ?? existing[0].role);
+
+    await db.query(
+      `UPDATE employees SET
+        name = ?, email = ?, phone = ?, department_id = ?,
+        designation = ?, joining_date = ?, employment_status = ?, role = ?, address = ?, avatar = ?
+       WHERE id = ?`,
+      [
+        name || existing[0].name,
+        email || existing[0].email,
+        phone ?? existing[0].phone,
+        department_id ?? existing[0].department_id,
+        designation ?? existing[0].designation,
+        joining_date ?? existing[0].joining_date,
+        status ?? existing[0].status, 
+        finalRole,                        // ADDED: Secured role variable
+        address ?? existing[0].address,
+        avatar,
+        id,                               // WHERE id = ?
       ]
     );
 
@@ -233,4 +324,5 @@ module.exports = {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  updateProfileEmployee
 };

@@ -23,6 +23,11 @@ app.use('/api/departments',  require('./routes/departmentRoutes'));
 app.use('/api/designations', require('./routes/designationRoutes'));
 app.use('/api/dashboard',    require('./routes/dashboardRoutes'));
 app.use('/api/marketing',    require('./routes/marketingRoutes'));
+app.use('/api/attendance',    require('./routes/attendence'));
+app.use('/api/leadTypes',    require('./routes/leadRoute'));
+app.use('/api/status',    require('./routes/statusRoute'));
+app.use('/api/leave',    require('./routes/leaveRoutes'));
+app.use('/api/roles',    require('./routes/rolesRoute'));
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
