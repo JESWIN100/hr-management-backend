@@ -29,6 +29,7 @@ app.use('/api/status',    require('./routes/statusRoute'));
 app.use('/api/leave',    require('./routes/leaveRoutes'));
 app.use('/api/roles',    require('./routes/rolesRoute'));
 app.use('/api/previlage',    require('./routes/previlageRoute'));
+app.use('/api/task',    require('./routes/taskRoute'));
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
