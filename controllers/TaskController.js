@@ -213,16 +213,17 @@ const getWorkingStages = async (req, res) => {
 const addEmployeeToProject = async (req, res) => {
     // UPDATED: Now accepting 'role' from the request body
     const { project_id, employee_ids, role } = req.body; 
+console.log(req.body);
 
     if (!project_id || !employee_ids || !Array.isArray(employee_ids) || employee_ids.length === 0) {
         return res.status(400).json({ error: 'Project ID and an array of Employee IDs are required' });
     }
 
     try {
-        // Format data: [[project_id, emp_id_1, role], [project_id, emp_id_2, role]]
-        // Default to 'Member' if no role is provided
+        
         const assignedRole = role || 'Member';
         const values = employee_ids.map(emp_id => [project_id, emp_id, assignedRole]);
+console.log("values",values);
 
         // UPDATED: Using ON DUPLICATE KEY UPDATE so you can update an existing employee's role
         const [result] = await db.query(
@@ -241,6 +242,41 @@ const addEmployeeToProject = async (req, res) => {
     }
 };
 
+// const getProjectEmployees = async (req, res) => {
+//     const { project_id } = req.params;
+
+//     if (!project_id) {
+//         return res.status(400).json({ error: "Project ID is required" });
+//     }
+
+//     try {
+//         const query = `
+//             SELECT
+//                 pe.project_id,
+//                 pe.employee_id,
+//                 pos.status_name AS position_name,
+//                 e.name AS employee_name,
+//                 e.avatar AS image,
+//                 p.name AS project_name
+//             FROM project_employees pe
+//             INNER JOIN employees e
+//                 ON pe.employee_id = e.id
+//             INNER JOIN projects p
+//                 ON pe.project_id = p.id
+//                 LEFT JOIN  statuses pos            /* 👈 Join the positions table */
+//             ON pe.position = pos.id
+//             WHERE pe.project_id = ?
+//         `;
+
+//         const [rows] = await db.query(query, [project_id]);
+
+//         res.status(200).json(rows);
+//     } catch (err) {
+//         res.status(500).json({ error: err.message });
+//     }
+// };
+
+
 const getProjectEmployees = async (req, res) => {
     const { project_id } = req.params;
 
@@ -253,28 +289,37 @@ const getProjectEmployees = async (req, res) => {
             SELECT
                 pe.project_id,
                 pe.employee_id,
-                pe.position ,
+                pos.status_name AS position_name,
                 e.name AS employee_name,
                 e.avatar AS image,
-                p.name AS project_name
+                p.name AS project_name,
+                u.isonline            /* 👈 Grabs the online status from the users table */
             FROM project_employees pe
             INNER JOIN employees e
                 ON pe.employee_id = e.id
             INNER JOIN projects p
                 ON pe.project_id = p.id
+            LEFT JOIN statuses pos
+                ON pe.position = pos.id
+            LEFT JOIN users u         /* 👈 Joins the users table using the user_id from employees */
+                ON e.user_id = u.id
             WHERE pe.project_id = ?
         `;
 
         const [rows] = await db.query(query, [project_id]);
 
-        res.status(200).json(rows);
+        // Optional: Ensure isonline returns as a boolean (true/false) instead of 1/0
+        const formattedRows = rows.map(row => ({
+            ...row,
+            isonline: row.isonline === 1
+        }));
+console.log("formattedRows,formattedRows",formattedRows);
+
+        res.status(200).json(formattedRows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
-
-
-
 
 
 const addSubtask = async (req, res) => {
@@ -413,6 +458,47 @@ const getMyTasks = async (req, res) => {
 };
 
 
+const updateSubtaskAssignee = async (req, res) => {
+    const { id } = req.params;
+    const { assigned_to } = req.body;
+    
+    try {
+        await db.query(
+            `UPDATE subtasks SET assigned_to = ? WHERE id = ?`, 
+            [assigned_to || null, id]
+        );
+        res.json({ message: 'Subtask assignee updated successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+const getAllassignedroles = async (req, res) => {
+  try {
+    // Select the ID, status name, and description where the related field is 'lead_types'
+    const query = `
+      SELECT id, status_name, description 
+      FROM statuses 
+      WHERE related_field = 'Assign Role' AND is_active = 1
+      ORDER BY id ASC
+    `;
+
+    // Execute the query
+    const [assignedroles] = await db.execute(query);
+ console.log(assignedroles);
+ 
+    // Send the response back to the frontend
+    res.status(200).json({
+      message: 'Lead types fetched successfully',
+      data: assignedroles
+    });
+    
+  } catch (error) {
+    console.error('Error fetching assignedroles types:', error);
+    res.status(500).json({ error: 'Failed to fetch assignedroles types' });
+  }
+};
+
 module.exports = {
     addProject,
     getAllProjects,
@@ -428,5 +514,7 @@ module.exports = {
     getSubtasks,
     toggleSubtaskStatus,
     getTaskEmployees,
-    getMyTasks
+    getMyTasks,
+    updateSubtaskAssignee,
+    getAllassignedroles
 };

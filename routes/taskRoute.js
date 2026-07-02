@@ -3,7 +3,7 @@ const router = express.Router();
 
 
 const authenticate = require('../middleware/auth');
-const { addProject, getAllProjects, getTask, addTask, statusUpdate, updateTaskAssignee, getWorkingStages, getTaskbyid, addEmployeeToProject, getProjectEmployees, addSubtask, getSubtasks, toggleSubtaskStatus, getTaskemployees, getTaskEmployees, getMyTasks } = require('../controllers/TaskController');
+const { addProject, getAllProjects, getTask, addTask, statusUpdate, updateTaskAssignee, getWorkingStages, getTaskbyid, addEmployeeToProject, getProjectEmployees, addSubtask, getSubtasks, toggleSubtaskStatus, getTaskemployees, getTaskEmployees, getMyTasks, updateSubtaskAssignee, getAllassignedroles } = require('../controllers/TaskController');
 
 router.post('/projects',authenticate, addProject);
 router.get('/projects',authenticate, getAllProjects);
@@ -14,6 +14,8 @@ router.get('/projects/get/employee/:project_id',authenticate, getProjectEmployee
 router.get('/task/employees/:taskId',authenticate, getTaskEmployees); 
 
 router.get('/task/myworks',authenticate, getMyTasks); 
+
+router.get('/roles',authenticate, getAllassignedroles); 
 
 
 router.get('/tasks',authenticate, getTask);
@@ -26,5 +28,6 @@ router.put('/update/employeee/:id',authenticate, updateTaskAssignee);
 router.post('/subtasks',authenticate, addSubtask);
 router.get('/subtasks/:task_id',authenticate, getSubtasks);
 router.put('/subtasks/status/:id',authenticate, toggleSubtaskStatus);
+router.put('/subtasks/assignee/:id',authenticate, updateSubtaskAssignee);
 
 module.exports = router;

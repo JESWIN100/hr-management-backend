@@ -30,6 +30,10 @@ app.use('/api/leave',    require('./routes/leaveRoutes'));
 app.use('/api/roles',    require('./routes/rolesRoute'));
 app.use('/api/previlage',    require('./routes/previlageRoute'));
 app.use('/api/task',    require('./routes/taskRoute'));
+app.use('/api/chat',    require('./routes/chatRoutes'));
+app.use('/api/meetings',    require('./routes/meetingRoute'));
+app.use('/api/working-stages',    require('./routes/workingstages'));
+app.use('/api/dashboard',    require('./routes/employeedashboardroutes'));
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

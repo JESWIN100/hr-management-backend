@@ -36,10 +36,7 @@ const getallattendence= async (req, res) => {
         empRecords[record.day - 1] = record.status;
       });
 
-      // Handle missing avatars gracefully using Pravatar as a fallback or default icon
-      // const avatarUrl = emp.avatar && emp.avatar !== 'null' && emp.avatar !== 'NULL' 
-      //   ? `http://localhost:5000${emp.avatar}` // Assuming avatars are hosted on this server
-      //   : `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=random`;
+
 
       return {
         id: emp.id,
@@ -177,4 +174,163 @@ const getYearlyEmployeeAttendance = async (req, res) => {
 };
 
 
-module.exports = { getallattendence,getOneEmployeeAttendance ,getYearlyEmployeeAttendance};
+const updateAttendance = async (req, res) => {
+  const { employeeId, year, month, day, status } = req.body;
+
+  // 1. Validate required fields
+  if (!employeeId || year === undefined || month === undefined || !day || !status) {
+    return res.status(400).json({ message: 'All fields are required' });
+  }
+
+  // 2. Format the date for MySQL (YYYY-MM-DD)
+  // React sends month as 0-11, so we add 1 for MySQL
+  const numMonth = parseInt(month) + 1; 
+  const formattedDate = `${year}-${String(numMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  try {
+    if (status === 'empty') {
+      // 3a. If status is empty, delete the record so it defaults back to 'empty' on fetch
+      await db.query(
+        'DELETE FROM attendance WHERE employee_id = ? AND record_date = ?',
+        [employeeId, formattedDate]
+      );
+    } else {
+      // 3b. Upsert: Insert if it doesn't exist, Update if it does
+      await db.query(`
+        INSERT INTO attendance (employee_id, record_date, status) 
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE status = VALUES(status)
+      `, [employeeId, formattedDate, status]);
+    }
+
+    res.status(200).json({ message: 'Attendance updated successfully' });
+
+  } catch (error) {
+    console.error('Attendance Update Error:', error);
+    res.status(500).json({ message: 'Server error updating attendance' });
+  }
+};
+
+
+// const getAttendanceLogs = async (req, res) => {
+//   try {
+//     const [rows] = await db.query(`
+//       SELECT
+//         e.id,
+//         e.name,
+//         e.avatar,
+//         e.working_hours, -- NEW: Fetch target hours
+//         MAX(a.status) as status,
+//         MIN(es.login_time) AS login_time,
+//         MAX(es.logout_time) AS logout_time,
+//         DATE(es.login_time) AS date,
+//         SUM(TIMESTAMPDIFF(SECOND, es.login_time, es.logout_time)) / 3600 AS total_duration_hours,
+//         COUNT(es.id) AS session_count
+//       FROM employee_sessions es
+//       LEFT JOIN employees e ON es.user_id = e.user_id
+//       LEFT JOIN attendance a ON es.attendance_id = a.id
+//       GROUP BY e.id, e.name, e.avatar, e.working_hours, DATE(es.login_time)
+//       ORDER BY DATE(es.login_time) DESC, MIN(es.login_time) DESC
+//     `);
+
+//     res.json(rows);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ message: "Server Error" });
+//   }
+// };
+
+const getAttendanceLogs = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        e.id,
+        e.name,
+        e.avatar,
+        e.working_hours,
+        MAX(a.status) as status,
+        MIN(es.login_time) AS login_time,
+        MAX(es.logout_time) AS logout_time,
+        DATE(es.login_time) AS date,
+        SUM(TIMESTAMPDIFF(SECOND, es.login_time, es.logout_time)) / 3600 AS total_duration_hours,
+        COUNT(es.id) AS session_count,
+        
+        -- FIX: Manually build the JSON array using GROUP_CONCAT for older DB compatibility
+        CONCAT('[', 
+          GROUP_CONCAT(
+            CONCAT('{"in":"', IFNULL(es.login_time, ''), '", "out":"', IFNULL(es.logout_time, ''), '"}') 
+            SEPARATOR ','
+          ), 
+        ']') as session_details
+
+      FROM employee_sessions es
+      LEFT JOIN employees e ON es.user_id = e.user_id
+      LEFT JOIN attendance a ON es.attendance_id = a.id
+      GROUP BY e.id, e.name, e.avatar, e.working_hours, DATE(es.login_time)
+      ORDER BY DATE(es.login_time) DESC, MIN(es.login_time) DESC
+    `);
+
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      message: "Server Error",
+    });
+  }
+};
+
+
+
+const getDashboardStats = async (req, res) => {
+  const year = req.query.year || new Date().getFullYear();
+
+  try {
+    // 1. Fetch Monthly Online Hours (Area Chart)
+    const [monthlyHours] = await db.query(`
+      SELECT 
+        MONTH(login_time) as month, 
+        SUM(TIMESTAMPDIFF(SECOND, login_time, logout_time)) / 3600 AS total_hours
+      FROM employee_sessions
+      WHERE YEAR(login_time) = ? AND logout_time IS NOT NULL
+      GROUP BY MONTH(login_time)
+      ORDER BY month ASC
+    `, [year]);
+
+    // Format for Area Chart (Jan - Dec)
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const areaChartData = monthNames.map((month, index) => {
+      const found = monthlyHours.find(m => m.month === index + 1);
+      return {
+        name: month,
+        hours: found ? Math.round(found.total_hours) : 0
+      };
+    });
+
+    // 2. Fetch Daily Attendance States (Heatmap)
+    // Grabbing the last 90 days of attendance
+    const [dailyAttendance] = await db.query(`
+      SELECT 
+        DATE(record_date) as date, 
+        DAYOFWEEK(record_date) as day_of_week, 
+        COUNT(id) as count
+      FROM attendance
+      WHERE status = 'present' AND record_date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+      GROUP BY DATE(record_date)
+    `);
+
+    res.json({
+      areaChartData,
+      heatmapData: dailyAttendance
+    });
+
+  } catch (error) {
+    console.error('Dashboard Stats Error:', error);
+    res.status(500).json({ message: 'Server error fetching dashboard stats' });
+  }
+};
+
+
+
+
+module.exports = { getallattendence,getOneEmployeeAttendance ,
+  getYearlyEmployeeAttendance,getAttendanceLogs,updateAttendance,getDashboardStats};

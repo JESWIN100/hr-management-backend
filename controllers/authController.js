@@ -29,6 +29,11 @@ const login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
+await db.query(
+  'UPDATE users SET isonline = 1 WHERE id = ?',
+  [user.id]
+);
+
     // 4. Fetch Employee Details
     // FIX: Added 'role' to the SELECT statement
   const employeeQuery = `
@@ -38,15 +43,16 @@ const login = async (req, res) => {
       WHERE e.user_id = ?
     `;
     const [employees] = await db.query(employeeQuery, [user.id]);
-    
+  
     // Set default avatar and role from the users table
     let employeeAvatar = user.avatar || null; 
     let employeeRole = user.role || null; 
-
+    let employeeId = null;
+    let sessionId = null;
     // 5. Update Employee Data and Attendance (If applicable)
     if (employees.length > 0) {
       const employee = employees[0];
-      
+        employeeId = employee.id; 
       // Assign the fetched employee details
       employeeAvatar = employee.avatar || employeeAvatar;
       employeeRole = employee.role_name || employeeRole;
@@ -58,10 +64,21 @@ const login = async (req, res) => {
         ON DUPLICATE KEY UPDATE status = 'present'
       `;
       await db.query(attendanceQuery, [employee.id]); 
-    }
 
-    // 6. Generate JWT
-    // FIX: Use the final `employeeRole` so the token matches frontend permissions
+
+      const [attendanceRows] = await db.query(
+        'SELECT id FROM attendance WHERE employee_id = ? AND record_date = CURDATE()',
+        [employeeId]
+      );
+      const attendanceId = attendanceRows[0].id;
+   
+const [sessionResult] = await db.query(
+            'INSERT INTO employee_sessions (user_id,attendance_id, login_time) VALUES (?,?, NOW())',
+            [user?.id,attendanceId] // assuming you have the user object here
+        );
+         sessionId = sessionResult.insertId;
+         }
+   
     const token = jwt.sign(
       { id: user.id, email: user.email, role: employeeRole },
       JWT_SECRET, // Ensure this is imported or accessed via process.env.JWT_SECRET
@@ -77,11 +94,13 @@ console.log(employeeRole,employeeAvatar);
       token,
       user: {
         id: user.id,
+        employeeId,
         name: user.name, // Ensure 'name' exists in your users table schema
         email: user.email,
         role: employeeRole,
         image: employeeAvatar
       },
+      sessionId:sessionId
     });
 
   } catch (err) {
@@ -170,4 +189,28 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { login, signup, getMe };
+const logout = async (req, res) => {
+    const { sessionId,userId } = req.body;
+
+    if (!sessionId) {
+        return res.status(400).json({ message: "Session ID required" });
+    }
+
+    try {
+        // Update the logout time for this specific session
+        await db.query(
+            'UPDATE employee_sessions SET logout_time = NOW() WHERE id = ?',
+            [sessionId]
+        );
+
+         await db.query(
+            'UPDATE users SET isonline = 0 WHERE id = ?',
+            [userId]
+        );
+        res.json({ success: true, message: "Logged out successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Error logging out" });
+    }
+};
+
+module.exports = { login, signup, getMe,logout };

@@ -88,7 +88,7 @@ console.log(req.body);
   try {
     const {
       name, email, phone, department_id,
-      designation, joining_date, employment_status,role, address,status
+      designation, joining_date, employment_status,role, address,status,working_hours
     } = req.body;
 
     
@@ -111,13 +111,13 @@ console.log(req.body);
 
     const [result] = await db.query(
       `INSERT INTO employees
-        (name,person_id,email, phone, department_id, designation, joining_date, employment_status, address, avatar,role)
-       VALUES (?,?, ?,?, ?, ?, ?, ?, ?, ?,?)`,
+        (name,person_id,email, phone, department_id, designation, joining_date, employment_status,working_hours, address, avatar,role)
+       VALUES (?,?, ?,?, ?, ?, ?, ?,?, ?, ?,?)`,
       [
         name,person_id, email, phone || null,
         department_id || null, designation || null,
         joining_date || null,
-        status || 'Active',
+        status || 'Active',working_hours,
         address || null, avatar,role,
       ]
     );
@@ -147,7 +147,7 @@ const updateEmployee = async (req, res) => {
     const { id } = req.params;
     const {
       name, email, phone, department_id,
-      designation, joining_date, employment_status, role, address, status
+      designation, joining_date, employment_status, role, address, status,working_hours
     } = req.body;
 
     const [existing] = await db.query('SELECT * FROM employees WHERE id = ?', [id]);
@@ -180,7 +180,7 @@ const updateEmployee = async (req, res) => {
     await db.query(
       `UPDATE employees SET
         name = ?, email = ?, phone = ?, department_id = ?,
-        designation = ?, joining_date = ?, employment_status = ?, role = ?, address = ?, avatar = ?
+        designation = ?, joining_date = ?, employment_status = ?, role = ?, address = ?,working_hours = ? , avatar = ?
        WHERE id = ?`,
       [
         name || existing[0].name,
@@ -192,6 +192,7 @@ const updateEmployee = async (req, res) => {
        status ?? existing[0].status, 
         role ?? existing[0].role,         // ADDED: role
         address ?? existing[0].address,
+        working_hours ?? existing[0].working_hours,
         avatar,
         id,                               // WHERE id = ?
       ]
@@ -219,7 +220,7 @@ const updateProfileEmployee = async (req, res) => {
     const { id } = req.params;
     const {
       name, email, phone, department_id,
-      designation, joining_date, employment_status, role, address, status
+      designation, joining_date, employment_status, role, address, status,
     } = req.body;
 
     const [existing] = await db.query('SELECT * FROM employees WHERE id = ?', [id]);
